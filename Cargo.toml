@@ -7,7 +7,7 @@ description = "Python Rust interface"
 repository = "https://github.com/Garrett323/pyglue"
 readme = "README.md"
 keywords = ["python", "pyo3"]
-categories = ["lib"]
+categories = ["development-tools"]
 
 [dependencies]
 ndarray = "0.17.2"
