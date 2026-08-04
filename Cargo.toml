@@ -2,6 +2,12 @@
 name = "pyglue"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "Python Rust interface"
+repository = "https://github.com/Garrett323/pyglue"
+readme = "README.md"
+keywords = ["python", "pyo3"]
+categories = ["lib"]
 
 [dependencies]
 ndarray = "0.17.2"
