@@ -110,9 +110,8 @@ fn encode_object_array(
     let (nrows, ncols) = arr.getattr("shape").unwrap().extract().unwrap();
     let mut data = vec![0f64; nrows * ncols];
     let ptr = std::sync::Arc::new(SendPtr(data.as_mut_ptr()));
-    let mut string_column_indices: Vec<usize> = Vec::new();
-    let mut label_maps = HashMap::new();
-    let mut reverse_maps: HashMap<usize, HashMap<u64, String>> = HashMap::new();
+    let mut label_maps = HashMap::with_capacity(ncols);
+    let mut reverse_maps: HashMap<usize, HashMap<u64, String>> = HashMap::with_capacity(ncols);
     let values;
     let arr = if let OUT::DataFrame(_) = out {
         values = arr.getattr("values").unwrap();
@@ -136,46 +135,55 @@ fn encode_object_array(
                 // previously-seen numeric values to strings so the column is
                 // encoded uniformly.
                 string_cols[col_idx] = true;
-                strings = numeric.drain(..).map(|v| v.to_string()).collect();
+                strings[col_idx] = numeric[col_idx].drain(..).map(|v| v.to_string()).collect();
                 strings[col_idx].push(elem.str().expect("cant convert to str").to_string());
             }
         }
     }
 
-    (0..ncols).into_par_iter().for_each(|col_idx| {
-        if string_cols[col_idx] {
-            let (encoded, map) = match enc {
-                StringEncoding::LabelEncoding => label_encode(&strings[col_idx]),
-            };
-            // for (row_idx, val) in
-            encoded
-                .into_par_iter()
-                .enumerate()
-                .for_each(|(row_idx, val)| unsafe {
-                    *ptr.0.add(row_idx * ncols + col_idx) = val;
-                });
-            string_column_indices.push(col_idx);
-            let reverse: HashMap<u64, String> = map
-                .par_iter()
-                .filter_map(|(k, v)| v.map(|val| (val, k.clone())))
-                .collect();
-            label_maps.insert(col_idx, map);
-            reverse_maps.insert(col_idx, reverse);
-        } else {
-            // Purely numeric column — write collected values directly.
-            numeric[col_idx]
-                .into_par_iter()
-                .enumerate()
-                .for_each(|(row_idx, val)| unsafe {
-                    *ptr.0.add(row_idx * ncols + col_idx) = val;
-                });
-        }
+    let maps: Vec<(usize, HashMap<String, Option<u64>>, HashMap<u64, String>)> = (0..ncols)
+        .into_par_iter()
+        .filter_map(|col_idx| {
+            if string_cols[col_idx] {
+                let (encoded, map) = match enc {
+                    StringEncoding::LabelEncoding => label_encode(&strings[col_idx]),
+                };
+                // for (row_idx, val) in
+                encoded
+                    .into_par_iter()
+                    .enumerate()
+                    .for_each(|(row_idx, val)| unsafe {
+                        *ptr.0.add(row_idx * ncols + col_idx) = val;
+                    });
+                let reverse: HashMap<u64, String> = map
+                    .par_iter()
+                    .filter_map(|(k, v)| v.map(|val| (val, k.clone())))
+                    .collect();
+                Some((col_idx, map, reverse))
+            } else {
+                // Purely numeric column — write collected values directly.
+                numeric[col_idx]
+                    .par_iter()
+                    .enumerate()
+                    .for_each(|(row_idx, val)| unsafe {
+                        *ptr.0.add(row_idx * ncols + col_idx) = *val;
+                    });
+                None
+            }
+        })
+        .collect();
+    maps.iter().for_each(|(col_idx, map, reverse)| {
+        label_maps.insert(*col_idx, map.clone());
+        reverse_maps.insert(*col_idx, reverse.clone());
     });
-
     (
         Array2::from_shape_vec([nrows, ncols], data).expect("couldn't convert to ndarray"),
         EncodingInfo {
-            string_column_indices,
+            string_column_indices: string_cols
+                .iter()
+                .enumerate()
+                .filter_map(|(c, b)| if *b { Some(c) } else { None })
+                .collect(),
             _label_maps: label_maps,
             reverse_maps,
         },
