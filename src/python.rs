@@ -120,33 +120,32 @@ fn encode_object_array(
     } else {
         arr
     };
-
+    let mut string_cols = vec![false; ncols];
+    let mut numeric: Vec<Vec<f64>> = vec![Vec::with_capacity(nrows); ncols];
+    let mut strings: Vec<Vec<String>> = vec![Vec::with_capacity(nrows); ncols];
     for col_idx in 0..ncols {
-        let mut numeric: Vec<f64> = Vec::with_capacity(nrows);
-        let mut strings: Vec<String> = Vec::new();
-        let mut is_string_col = false;
-
         for row_idx in 0..nrows {
             // numpy supports `arr[(row, col)]` integer tuple indexing.
             let elem = arr.get_item((row_idx, col_idx)).unwrap();
-
-            if is_string_col {
-                strings.push(elem.str().expect("cant convert to str").to_string());
+            if string_cols[col_idx] {
+                strings[col_idx].push(elem.str().expect("cant convert to str").to_string());
             } else if let Ok(v) = elem.extract::<f64>() {
-                numeric.push(v);
+                numeric[col_idx].push(v);
             } else {
                 // First non-numeric element found — retroactively convert all
                 // previously-seen numeric values to strings so the column is
                 // encoded uniformly.
-                is_string_col = true;
+                string_cols[col_idx] = true;
                 strings = numeric.drain(..).map(|v| v.to_string()).collect();
-                strings.push(elem.str().expect("cant convert to str").to_string());
+                strings[col_idx].push(elem.str().expect("cant convert to str").to_string());
             }
         }
+    }
 
-        if is_string_col {
+    (0..ncols).into_par_iter().for_each(|col_idx| {
+        if string_cols[col_idx] {
             let (encoded, map) = match enc {
-                StringEncoding::LabelEncoding => label_encode(&strings),
+                StringEncoding::LabelEncoding => label_encode(&strings[col_idx]),
             };
             // for (row_idx, val) in
             encoded
@@ -164,14 +163,14 @@ fn encode_object_array(
             reverse_maps.insert(col_idx, reverse);
         } else {
             // Purely numeric column — write collected values directly.
-            numeric
+            numeric[col_idx]
                 .into_par_iter()
                 .enumerate()
                 .for_each(|(row_idx, val)| unsafe {
                     *ptr.0.add(row_idx * ncols + col_idx) = val;
                 });
         }
-    }
+    });
 
     (
         Array2::from_shape_vec([nrows, ncols], data).expect("couldn't convert to ndarray"),
