@@ -194,7 +194,7 @@ pub fn arr_to_out<'py>(
     py: Python<'py>,
     arr: &Array2<f64>,
     out: OUT,
-    enc_info: Option<EncodingInfo>,
+    enc_info: Option<&EncodingInfo>,
 ) -> PyResult<Bound<'py, PyAny>> {
     match out {
         OUT::Numpy => {
