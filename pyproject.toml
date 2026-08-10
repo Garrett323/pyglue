@@ -7,7 +7,7 @@ name = "pyglue"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "tk", email = "tk" }
+    { name = "tk", email = "tkochs@proton.me" }
 ]
 requires-python = ">=3.13"
 dependencies = [
