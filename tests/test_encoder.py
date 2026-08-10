@@ -12,9 +12,12 @@ def test_encode_decode_mixed_dataframe():
         "city": ["Berlin", "Paris", "Berlin", "London"],
     })
     encoder = Encoder()
-    encoded = encoder.encode(df)
+    encoded, cat_cols = encoder.encode(df)
     decoded = encoder.decode(encoded)
     assert_frame_equal(decoded, df, check_dtype=False)
+    assert(len(cat_cols) == 2)
+    for i, j in zip(cat_cols,[2,3]):
+        assert(i == j)
 
 def test_picklable():
     enc = Encoder()
