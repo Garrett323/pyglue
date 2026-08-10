@@ -3,20 +3,18 @@ requires = ["maturin>=1.12,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "pyglue"
+name = "pyglue-rs"
 description = "Add your description here"
 readme = "README.md"
 authors = [
     { name = "tk", email = "tkochs@proton.me" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "maturin>=1.14.1",
 ]
 dynamic = ["version"]
 
-[project.scripts]
-pyglue = "pyglue:main"
 
 [dependency-groups]
 dev = [
