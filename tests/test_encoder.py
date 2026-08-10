@@ -18,12 +18,6 @@ def test_encode_decode_mixed_dataframe():
 
 def test_picklable():
     enc = Encoder()
-    try:
-        data = pickle.dumps(enc)
-        restored = pickle.loads(data)
-        print("✅ Picklable")
-        return restored
-    except (pickle.PicklingError, TypeError, AttributeError) as e:
-        print(f"❌ Not picklable: {e}")
-        return None
-
+    data = pickle.dumps(enc)      # if this raises, pytest fails the test — good
+    restored = pickle.loads(data)
+    assert isinstance(restored, Encoder)

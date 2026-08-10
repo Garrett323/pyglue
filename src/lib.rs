@@ -72,7 +72,7 @@ pub fn label_encode(values: &[String]) -> (Vec<f64>, HashMap<String, Option<u64>
     (encoded, map)
 }
 
-#[pyclass]
+#[pyclass(module = "pyglue")]
 #[derive(Serialize, Deserialize)]
 struct Encoder {
     encoding_info: Option<python::EncodingInfo>,
