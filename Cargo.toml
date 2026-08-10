@@ -1,5 +1,5 @@
 [package]
-name = "pyglue"
+name = "pyglue-cheese"
 version = "0.1.2"
 edition = "2024"
 license = "MIT"
@@ -8,6 +8,10 @@ repository = "https://github.com/Garrett323/pyglue"
 readme = "README.md"
 keywords = ["python", "pyo3"]
 categories = ["development-tools"]
+
+[lib]
+name = "pyglue"
+crate-type = ["cdylib"]
 
 [dependencies]
 ndarray = "0.17.2"
