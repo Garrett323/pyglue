@@ -1,5 +1,6 @@
 use ndarray::ArrayView2;
 use pyo3::prelude::*;
+use pyo3::types::{PyAny, PyBytes};
 use rayon::prelude::*;
 mod python;
 use serde::{Deserialize, Serialize};
@@ -116,5 +117,21 @@ impl Encoder {
     ) -> PyResult<Bound<'py, PyAny>> {
         let (arr, out, _) = pyany_to_vec(obj, &Some(self.encoding_strat.clone()))?;
         arr_to_out(py, &arr, out, self.encoding_info.as_ref())
+    }
+
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        // Serialize whatever fields matter into bytes
+        let bytes = bincode::serialize(&self)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(PyBytes::new(py, &bytes).into())
+    }
+
+    fn __setstate__(&mut self, state: &Bound<'_, PyBytes>) -> PyResult<()> {
+        let decoded: Encoder = bincode::deserialize(state.as_bytes()).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("failed to unpickle KnnImputerRS: {e}"))
+        })?;
+        self.encoding_info = decoded.encoding_info;
+        self.encoding_strat = decoded.encoding_strat;
+        Ok(())
     }
 }
