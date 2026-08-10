@@ -13,7 +13,7 @@ pub enum OUT {
     DataFrame(Vec<String>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EncodingInfo {
     pub string_column_indices: Vec<usize>,
     pub _label_maps: HashMap<usize, HashMap<String, Option<u64>>>,

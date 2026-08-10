@@ -2,6 +2,7 @@ use ndarray::ArrayView2;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 mod python;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 struct SendPtr(pub *mut f64);
@@ -71,6 +72,7 @@ pub fn label_encode(values: &[String]) -> (Vec<f64>, HashMap<String, Option<u64>
 }
 
 #[pyclass]
+#[derive(Serialize, Deserialize)]
 struct Encoder {
     encoding_info: Option<python::EncodingInfo>,
     encoding_strat: StringEncoding,

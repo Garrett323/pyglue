@@ -1,4 +1,5 @@
 import pandas as pd
+import pickle
 from pandas.testing import assert_frame_equal
 from pyglue import Encoder
 
@@ -10,10 +11,19 @@ def test_encode_decode_mixed_dataframe():
         "name": ["Alice", "Bob", "Charlie", "Diana"],
         "city": ["Berlin", "Paris", "Berlin", "London"],
     })
-
     encoder = Encoder()
-
     encoded = encoder.encode(df)
     decoded = encoder.decode(encoded)
-
     assert_frame_equal(decoded, df, check_dtype=False)
+
+def test_picklable():
+    enc = Encoder()
+    try:
+        data = pickle.dumps(enc)
+        restored = pickle.loads(data)
+        print("✅ Picklable")
+        return restored
+    except (pickle.PicklingError, TypeError, AttributeError) as e:
+        print(f"❌ Not picklable: {e}")
+        return None
+
