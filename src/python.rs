@@ -1,6 +1,8 @@
 use super::{SendPtr, label_encode};
+use crate::errors::Errors;
 use ndarray::{Array2, ArrayView2};
-use numpy::{PyArrayMethods, ToPyArray};
+use numpy::{PyArray2, PyArrayMethods, ToPyArray};
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyString};
 use rayon::prelude::*;
@@ -78,14 +80,27 @@ pub fn pyany_to_vec(
         }
         _ => {
             println!("{}", typ);
-            return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
-                "Unsupported type: '{}'. Supported types are: {}",
-                typ, SUPPORTED_TYPES
-            )));
+            let e = Err(Errors::UnsupportedType {
+                unsupported: typ.to_string(),
+                supported: Some(SUPPORTED_TYPES.to_string()),
+            }
+            .into());
+            return e;
         }
     };
+    // For DataFrames, inspect the underlying NumPy array. Casting the DataFrame
+    // itself always fails and incorrectly sends an all-numeric frame through
+    // the object-array encoder.
+    let values;
+    let array_obj = if let OUT::DataFrame(_) = &out {
+        values = obj.getattr("values")?;
+        values.as_ref()
+    } else {
+        obj
+    };
+
     // happy path not categorical values
-    if let Ok(arr) = obj.cast() {
+    if let Ok(arr) = array_obj.cast::<PyArray2<f64>>() {
         Ok((arr.readonly().to_owned_array(), out, None))
     }
     // need to deal with categories
@@ -95,7 +110,7 @@ pub fn pyany_to_vec(
                 "Provide a way to encode String!".to_string(),
             )),
             Some(enc) => {
-                let (data, enc_info) = encode_object_array(obj, enc, &out);
+                let (data, enc_info) = encode_object_array(obj, enc, &out)?;
                 Ok((data, out, Some(enc_info)))
             }
         }
@@ -106,7 +121,7 @@ fn encode_object_array(
     arr: &Bound<'_, PyAny>,
     enc: &StringEncoding,
     out: &OUT,
-) -> (Array2<f64>, EncodingInfo) {
+) -> PyResult<(Array2<f64>, EncodingInfo)> {
     let (nrows, ncols) = arr.getattr("shape").unwrap().extract().unwrap();
     let mut data = vec![0f64; nrows * ncols];
     let ptr = std::sync::Arc::new(SendPtr(data.as_mut_ptr()));
@@ -119,27 +134,49 @@ fn encode_object_array(
     } else {
         arr
     };
+    let arr = arr.cast::<PyArray2<Py<PyAny>>>()?.try_readonly()?;
     let mut string_cols = vec![false; ncols];
     let mut numeric: Vec<Vec<f64>> = vec![Vec::with_capacity(nrows); ncols];
     let mut strings: Vec<Vec<String>> = vec![Vec::with_capacity(nrows); ncols];
-    for col_idx in 0..ncols {
-        for row_idx in 0..nrows {
-            // numpy supports `arr[(row, col)]` integer tuple indexing.
-            let elem = arr.get_item((row_idx, col_idx)).unwrap();
-            if string_cols[col_idx] {
-                strings[col_idx].push(elem.str().expect("cant convert to str").to_string());
-            } else if let Ok(v) = elem.extract::<f64>() {
-                numeric[col_idx].push(v);
-            } else {
-                // First non-numeric element found — retroactively convert all
-                // previously-seen numeric values to strings so the column is
-                // encoded uniformly.
-                string_cols[col_idx] = true;
-                strings[col_idx] = numeric[col_idx].drain(..).map(|v| v.to_string()).collect();
-                strings[col_idx].push(elem.str().expect("cant convert to str").to_string());
-            }
-        }
-    }
+    let res: PyResult<()> = (0..ncols)
+        .into_iter()
+        .map(|col_idx| {
+            (0..nrows)
+                .into_iter()
+                .map(|row_idx| {
+                    // for row_idx in 0..nrows {
+                    // numpy supports `arr[(row, col)]` integer tuple indexing.
+                    Python::attach(|py| {
+                        let elem = arr
+                            .get((row_idx, col_idx))
+                            .ok_or_else(|| PyIndexError::new_err("indexing Error"))?;
+                        // .ok_or_else(|| PyIndexError::new_err("index out of bounds"))?
+                        // .bind(py);
+                        if string_cols[col_idx] {
+                            strings[col_idx].push(
+                                elem.bind(py)
+                                    .str()?
+                                    // .expect("cant convert to str")
+                                    .to_string(),
+                            );
+                        } else if let Ok(v) = elem.bind(py).extract::<f64>() {
+                            numeric[col_idx].push(v);
+                        } else {
+                            // First non-numeric element found — retroactively convert all
+                            // previously-seen numeric values to strings so the column is
+                            // encoded uniformly.
+                            string_cols[col_idx] = true;
+                            strings[col_idx] =
+                                numeric[col_idx].drain(..).map(|v| v.to_string()).collect();
+                            strings[col_idx].push(elem.bind(py).str()?.to_string());
+                        }
+                        Ok(())
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    res?;
 
     let maps: Vec<(usize, HashMap<String, Option<u64>>, HashMap<u64, String>)> = (0..ncols)
         .into_par_iter()
@@ -176,7 +213,7 @@ fn encode_object_array(
         label_maps.insert(*col_idx, map.clone());
         reverse_maps.insert(*col_idx, reverse.clone());
     });
-    (
+    Ok((
         Array2::from_shape_vec([nrows, ncols], data).expect("couldn't convert to ndarray"),
         EncodingInfo {
             string_column_indices: string_cols
@@ -187,7 +224,7 @@ fn encode_object_array(
             _label_maps: label_maps,
             reverse_maps,
         },
-    )
+    ))
 }
 
 pub fn arr_to_out<'py>(
