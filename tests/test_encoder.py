@@ -1,5 +1,6 @@
 import pandas as pd
 import pickle
+import numpy as np
 from pandas.testing import assert_frame_equal
 from pyglue.pyglue import Encoder
 
@@ -48,6 +49,38 @@ def test_encode_decode_all_categorical_dataframe():
 
     assert cat_cols == [0, 1]
     assert_frame_equal(decoded, df, check_dtype=False)
+
+
+def test_encode_decode_all_numeric_numpy_array():
+    arr = np.array([
+        [25, 1.75],
+        [31, 1.82],
+        [42, 1.68],
+        [28, 1.91],
+    ])
+
+    encoder = Encoder()
+    encoded, cat_cols = encoder.encode(arr)
+    decoded = encoder.decode(encoded)
+
+    assert cat_cols is None
+    np.testing.assert_array_equal(decoded, arr)
+
+
+def test_encode_decode_all_categorical_numpy_array():
+    arr = np.array([
+        ["Alice", "Berlin"],
+        ["Bob", "Paris"],
+        ["Charlie", "Berlin"],
+        ["Diana", "London"],
+    ])
+
+    encoder = Encoder()
+    encoded, cat_cols = encoder.encode(arr)
+    decoded = encoder.decode(encoded)
+
+    assert cat_cols == [0, 1]
+    np.testing.assert_array_equal(decoded, arr)
 
 
 def test_picklable():

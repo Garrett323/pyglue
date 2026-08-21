@@ -134,7 +134,18 @@ fn encode_object_array(
     } else {
         arr
     };
-    let arr = arr.cast::<PyArray2<Py<PyAny>>>()?.try_readonly()?;
+    // NumPy string arrays normally use a fixed-width Unicode dtype rather than
+    // object dtype. Normalize those arrays so their elements can be handled as
+    // Python objects alongside mixed object arrays from pandas.
+    let object_arr;
+    let arr = match arr.cast::<PyArray2<Py<PyAny>>>() {
+        Ok(arr) => arr,
+        Err(_) => {
+            object_arr = arr.call_method1("astype", ("object",))?;
+            object_arr.cast::<PyArray2<Py<PyAny>>>()?
+        }
+    };
+    let arr = arr.try_readonly()?;
     let mut string_cols = vec![false; ncols];
     let mut numeric: Vec<Vec<f64>> = vec![Vec::with_capacity(nrows); ncols];
     let mut strings: Vec<Vec<String>> = vec![Vec::with_capacity(nrows); ncols];
