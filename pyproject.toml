@@ -10,9 +10,7 @@ authors = [
     { name = "tk", email = "tkochs@proton.me" }
 ]
 requires-python = ">=3.11"
-dependencies = [
-    "maturin>=1.14.1",
-]
+dependencies = []
 dynamic = ["version"]
 
 
@@ -20,4 +18,6 @@ dynamic = ["version"]
 dev = [
     "pandas>=3.0.5",
     "pytest>=9.1.1",
+    "maturin>=1.14.1",
+    "pyperf>=2.10.0",
 ]

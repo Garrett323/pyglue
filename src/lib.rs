@@ -1,3 +1,4 @@
+mod errors;
 use ndarray::ArrayView2;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBytes};
@@ -61,7 +62,6 @@ pub fn label_encode(values: &[String]) -> (Vec<f64>, HashMap<String, Option<u64>
             }),
         })
         .collect();
-
     let encoded: Vec<f64> = values
         .par_iter()
         .map(|s| match map[s] {
@@ -108,7 +108,6 @@ impl Encoder {
     ) -> PyResult<(Bound<'py, PyAny>, Option<&Vec<usize>>)> {
         let (arr, out, enc_info) = pyany_to_vec(obj, &Some(self.encoding_strat.clone()))?;
         self.encoding_info = enc_info;
-
         let arr = arr_to_out(py, &arr, out, None)?;
         let string_cols = if let Some(info) = &self.encoding_info {
             Some(&info.string_column_indices)

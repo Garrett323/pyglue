@@ -1,4 +1,7 @@
 /target
 .python-version
 tests/__pycache__/test_encoder.cpython-313-pytest-9.1.1.pyc
-uv.lock
+**.lock
+**.so
+**.gz
+
