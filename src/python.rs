@@ -1,10 +1,10 @@
 use super::{SendPtr, label_encode};
 use crate::errors::Errors;
-use ndarray::{Array2, ArrayView2};
+use ndarray::{Array2, ArrayView1, ArrayView2};
 use numpy::{PyArray2, PyArrayMethods, ToPyArray};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyString};
+use pyo3::types::{PyAny, PyDict, PySlice};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ pub enum OUT {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EncodingInfo {
     pub string_column_indices: Vec<usize>,
-    pub _label_maps: HashMap<usize, HashMap<String, Option<u64>>>,
+    pub label_maps: HashMap<usize, HashMap<String, Option<u64>>>,
     pub reverse_maps: HashMap<usize, HashMap<u64, String>>,
 }
 
@@ -232,7 +232,7 @@ fn encode_object_array(
                 .enumerate()
                 .filter_map(|(c, b)| if *b { Some(c) } else { None })
                 .collect(),
-            _label_maps: label_maps,
+            label_maps: label_maps,
             reverse_maps,
         },
     ))
@@ -249,20 +249,14 @@ pub fn arr_to_out<'py>(
             let mut out = arr.view().to_pyarray(py).into_any();
             if let Some(enc) = enc_info {
                 // cast to object array then overwrite string columns
-                let np = py.import("numpy")?;
-                let obj_arr = np
-                    .call_method1("array", (&out,))?
-                    .call_method1("astype", ("object",))?;
+                out = out.call_method1("astype", ("object",))?;
                 for &col_idx in &enc.string_column_indices {
-                    let rev = &enc.reverse_maps[&col_idx];
-                    for row_idx in 0..arr.nrows() {
-                        let encoded = arr[(row_idx, col_idx)] as u64;
-                        let label = rev.get(&encoded).map(String::as_str).unwrap_or("NaN");
-                        obj_arr.call_method1("__setitem__", ((row_idx, col_idx), label))?;
-                    }
+                    let rev_map = &enc.reverse_maps[&col_idx];
+                    let labels = build_labels(arr.column(col_idx), rev_map);
+                    out.set_item((PySlice::full(py), col_idx), labels)?;
                 }
-                out = obj_arr.into_any();
             }
+            out = out.into_any();
             Ok(out)
         }
         OUT::DataFrame(columns) => {
@@ -275,35 +269,22 @@ pub fn arr_to_out<'py>(
 
             if let Some(enc) = enc_info {
                 for &col_idx in &enc.string_column_indices {
-                    let rev = &enc.reverse_maps[&col_idx];
-                    let decoded: Vec<Py<PyAny>> = (0..arr.nrows())
-                        .map(|r| {
-                            let v = arr[(r, col_idx)];
-                            if v.is_nan() {
-                                py.None()
-                            } else {
-                                rev.get(&(v as u64))
-                                    .map(|s| PyString::new(py, s).into_any().unbind())
-                                    .unwrap_or_else(|| py.None())
-                            }
-                        })
-                        .collect();
-                    // cast column to object dtype first
-                    df.call_method1(
-                        "__setitem__",
-                        (
-                            &columns[col_idx],
-                            df.get_item(&columns[col_idx])?
-                                .call_method1("astype", ("object",))?,
-                        ),
-                    )?;
-
-                    // now assign strings
-                    let loc = df.getattr("loc")?;
-                    loc.set_item((pyo3::types::PySlice::full(py), &columns[col_idx]), decoded)?;
+                    let rev_map = &enc.reverse_maps[&col_idx];
+                    let labels = build_labels(arr.column(col_idx), rev_map);
+                    df.call_method1("isetitem", (col_idx, labels))?;
                 }
             }
             Ok(df.into_any())
         }
     }
+}
+
+fn build_labels<'a>(col: ArrayView1<f64>, map: &'a HashMap<u64, String>) -> Vec<&'a str> {
+    (0..col.len())
+        .into_par_iter()
+        .map(|row_idx| {
+            let encoded = col[row_idx] as u64;
+            map.get(&encoded).map(String::as_str).unwrap_or("NaN")
+        })
+        .collect()
 }
